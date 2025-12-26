@@ -1,0 +1,46 @@
+name: Deploy Test App
+
+on:
+  push:
+    branches: [ main ]
+
+env:
+  AWS_REGION: us-east-1
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/GitHubActionsRole
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Build Docker Image
+        run: |
+          docker build -t frontend:latest ./frontend
+          #docker build -t backend:latest ./backend
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        run: |
+          aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
+
+      - name: Push Docker Image to ECR
+        run: |
+          docker tag frontend:latest ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/frontend:latest
+          #docker tag backend:latest ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/backend:latest
+          docker push ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/frontend:latest
+          #docker push ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/backend:latest
+
+      - name: Update ECS Service
+        run: |
+          aws ecs update-service --cluster hipaa-ecs-cluster --service frontend-service --task-definition frontend-task
+          #          aws ecs update-service --cluster hipaa-ecs-cluster --service backend-service --task-definition backend-task
+
